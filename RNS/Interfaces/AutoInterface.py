@@ -62,16 +62,18 @@ class AutoInterface(Interface):
         link_local_addr = re.sub(r"fe80:[0-9a-f]*::","fe80::", link_local_addr)
         return link_local_addr
 
-    def __init__(self, owner, name, group_id=None, discovery_scope=None, discovery_port=None, data_port=None, allowed_interfaces=None, ignored_interfaces=None, configured_bitrate=None):
-        import importlib
-        if importlib.util.find_spec('netifaces') != None:
-            import netifaces
-        else:
-            RNS.log("Using AutoInterface requires the netifaces module.", RNS.LOG_CRITICAL)
-            RNS.log("You can install it with the command: python3 -m pip install netifaces", RNS.LOG_CRITICAL)
-            RNS.panic()
+    def list_interfaces(self):
+        ifs = self.netinfo.interfaces()
+        return ifs
 
-        self.netifaces = netifaces
+    def list_addresses(self, ifname):
+        ifas = self.netinfo.ifaddresses(ifname)
+        return ifas
+
+    def __init__(self, owner, name, group_id=None, discovery_scope=None, discovery_port=None, data_port=None, allowed_interfaces=None, ignored_interfaces=None, configured_bitrate=None):
+        from RNS.vendor.ifaddr import niwrapper
+        self.netinfo = niwrapper
+
         self.rxb = 0
         self.txb = 0
 
@@ -148,7 +150,7 @@ class AutoInterface(Interface):
         self.mcast_discovery_address = "ff1"+self.discovery_scope+":"+gt
 
         suitable_interfaces = 0
-        for ifname in self.netifaces.interfaces():
+        for ifname in self.list_interfaces():
             if RNS.vendor.platformutils.is_darwin() and ifname in AutoInterface.DARWIN_IGNORE_IFS and not ifname in self.allowed_interfaces:
                 RNS.log(str(self)+" skipping Darwin AWDL or tethering interface "+str(ifname), RNS.LOG_EXTREME)
             elif RNS.vendor.platformutils.is_darwin() and ifname == "lo0":
@@ -163,10 +165,10 @@ class AutoInterface(Interface):
                 if len(self.allowed_interfaces) > 0 and not ifname in self.allowed_interfaces:
                     RNS.log(str(self)+" ignoring interface "+str(ifname)+" since it was not allowed", RNS.LOG_EXTREME)
                 else:
-                    addresses = self.netifaces.ifaddresses(ifname)
-                    if self.netifaces.AF_INET6 in addresses:
+                    addresses = self.list_addresses(ifname)
+                    if self.netinfo.AF_INET6 in addresses:
                         link_local_addr = None
-                        for address in addresses[self.netifaces.AF_INET6]:
+                        for address in addresses[self.netinfo.AF_INET6]:
                             if "addr" in address:
                                 if address["addr"].startswith("fe80:"):
                                     link_local_addr = self.descope_linklocal(address["addr"])
@@ -196,7 +198,11 @@ class AutoInterface(Interface):
                             discovery_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_JOIN_GROUP, mcast_group)
 
                             # Bind socket
-                            addr_info = socket.getaddrinfo(mcast_addr+"%"+ifname, self.discovery_port, socket.AF_INET6, socket.SOCK_DGRAM)
+                            if self.discovery_scope == AutoInterface.SCOPE_LINK:
+                                addr_info = socket.getaddrinfo(mcast_addr+"%"+ifname, self.discovery_port, socket.AF_INET6, socket.SOCK_DGRAM)
+                            else:
+                                addr_info = socket.getaddrinfo(mcast_addr, self.discovery_port, socket.AF_INET6, socket.SOCK_DGRAM)
+
                             discovery_socket.bind(addr_info[0][4])
 
                             # Set up thread for discovery packets
@@ -283,10 +289,10 @@ class AutoInterface(Interface):
             for ifname in self.adopted_interfaces:
                 # Check that the link-local address has not changed
                 try:
-                    addresses = self.netifaces.ifaddresses(ifname)
-                    if self.netifaces.AF_INET6 in addresses:
+                    addresses = self.list_addresses(ifname)
+                    if self.netinfo.AF_INET6 in addresses:
                         link_local_addr = None
-                        for address in addresses[self.netifaces.AF_INET6]:
+                        for address in addresses[self.netinfo.AF_INET6]:
                             if "addr" in address:
                                 if address["addr"].startswith("fe80:"):
                                     link_local_addr = self.descope_linklocal(address["addr"])

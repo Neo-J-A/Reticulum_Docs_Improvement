@@ -190,7 +190,6 @@ these dependencies, and when the `rns` package is installed with `pip`, they
 will be downloaded and installed as well.
 
 - [PyCA/cryptography](https://github.com/pyca/cryptography)
-- [netifaces](https://github.com/al45tair/netifaces)
 - [pyserial](https://github.com/pyserial/pyserial)
 
 On more unusual systems, and in some rare cases, it might not be possible to
@@ -228,31 +227,25 @@ I2P. Just add one of the following interfaces to your Reticulum configuration
 file:
 
 ```
-# TCP/IP interface to the Dublin Hub
+# TCP/IP interface to the RNS Dublin Hub
   [[RNS Testnet Dublin]]
     type = TCPClientInterface
     enabled = yes
     target_host = dublin.connect.reticulum.network
     target_port = 4965
 
-# TCP/IP interface to the Frankfurt Hub
-  [[RNS Testnet Frankfurt]]
+# TCP/IP interface to the BetweenTheBorders Hub (community-provided)
+  [[RNS Testnet BetweenTheBorders]]
     type = TCPClientInterface
     enabled = yes
-    target_host = frankfurt.connect.reticulum.network
-    target_port = 5377
+    target_host = betweentheborders.com
+    target_port = 4242
 
-# Interface to I2P Hub A
-  [[RNS Testnet I2P Hub A]]
+# Interface to Testnet I2P Hub
+  [[RNS Testnet I2P Hub]]
     type = I2PInterface
     enabled = yes
     peers = pmlm3l5rpympihoy2o5ago43kluei2jjjzsalcuiuylbve3mwi2a.b32.i2p
-
-# Interface to I2P Hub B
-  [[RNS Testnet I2P Hub B]]
-    type = I2PInterface
-    enabled = yes
-    peers = iwoqtz22dsr73aemwpw7guocplsjjoamyl7sogj33qtcd6ds4mza.b32.i2p
 ```
 
 The testnet also contains a number of [Nomad Network](https://github.com/markqvist/nomadnet) nodes, and LXMF propagation nodes.
@@ -341,8 +334,8 @@ projects:
 - [Curve25519.py](https://gist.github.com/nickovs/cc3c22d15f239a2640c185035c06f8a3#file-curve25519-py) by [Nicko van Someren](https://gist.github.com/nickovs), *Public Domain*
 - [I2Plib](https://github.com/l-n-s/i2plib) by [Viktor Villainov](https://github.com/l-n-s)
 - [PySerial](https://github.com/pyserial/pyserial) by Chris Liechti, *BSD License*
-- [Netifaces](https://github.com/al45tair/netifaces) by [Alastair Houghton](https://github.com/al45tair), *MIT License*
 - [Configobj](https://github.com/DiffSK/configobj) by Michael Foord, Nicola Larosa, Rob Dennis & Eli Courtwright, *BSD License*
 - [Six](https://github.com/benjaminp/six) by [Benjamin Peterson](https://github.com/benjaminp), *MIT License*
+- [ifaddr](https://github.com/pydron/ifaddr) by [Pydron](https://github.com/pydron), *MIT License*
 - [Umsgpack.py](https://github.com/vsergeev/u-msgpack-python) by [Ivan A. Sergeev](https://github.com/vsergeev)
 - [Python](https://www.python.org)

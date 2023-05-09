@@ -10,21 +10,44 @@ scenarios.
 Standalone Reticulum Installation
 =============================================
 If you simply want to install Reticulum and related utilities on a system,
-the easiest way is via ``pip``:
+the easiest way is via the ``pip`` package manager:
 
 .. code::
 
    pip install rns
 
-If you no not already have pip installed, you can install it using the package manager
+If you do not already have pip installed, you can install it using the package manager
 of your system with a command like ``sudo apt install python3-pip``,
-``sudo pamac install python-pip`` or similar. You can also dowload the Reticulum release
-wheels from GitHub, or other release channels, and install them offline using ``pip``:
+``sudo pamac install python-pip`` or similar.
+
+You can also dowload the Reticulum release wheels from GitHub, or other release channels,
+and install them offline using ``pip``:
 
 .. code::
 
-   pip install ./rns-0.4.6-py3-none-any.whl
+   pip install ./rns-0.5.1-py3-none-any.whl
 
+
+Resolving Dependency & Installation Issues
+=============================================
+On some platforms, there may not be binary packages available for all dependencies, and
+``pip`` installation may fail with an error message. In these cases, the issue can usually
+be resolved by installing the development essentials packages for your platform:
+
+.. code::
+
+    # Debian / Ubuntu / Derivatives
+    sudo apt install build-essential
+
+    # Arch / Manjaro / Derivatives
+    sudo pamac install base-devel
+
+    # Fedora
+    sudo dnf groupinstall "Development Tools" "Development Libraries"
+
+With the base development packages installed, ``pip`` should be able to compile any missing
+dependencies from source, and complete installation even on platforms that don't have pre-
+compiled packages available.
 
 Try Using a Reticulum-based Program
 =============================================
@@ -203,12 +226,12 @@ by adding one of the following interfaces to your ``.reticulum/config`` file:
     target_host = dublin.connect.reticulum.network
     target_port = 4965
 
-  # TCP/IP interface to the Frankfurt hub
-  [[RNS Testnet Frankfurt]]
+  # TCP/IP interface to the BetweenTheBorders Hub (community-provided)
+  [[RNS Testnet BetweenTheBorders]]
     type = TCPClientInterface
     enabled = yes
-    target_host = frankfurt.connect.reticulum.network
-    target_port = 5377
+    target_host = betweentheborders.com
+    target_port = 4242
 
   # Interface to I2P hub A
   [[RNS Testnet I2P Hub A]]
@@ -268,7 +291,7 @@ For extended functionality, you can install optional dependencies:
 
 .. code::
 
-   pip3 install pyserial netifaces
+   pip3 install pyserial
 
 
 Further information can be found in the :ref:`API Reference<api-main>`.
@@ -283,7 +306,7 @@ don't use pip, but try this recipe:
 .. code::
 
     # Install dependencies
-    pip3 install cryptography pyserial netifaces
+    pip3 install cryptography pyserial
 
     # Clone repository
     git clone https://github.com/markqvist/Reticulum.git
@@ -320,30 +343,14 @@ the `disucssion forum on GitHub <https://github.com/markqvist/Reticulum/discussi
 or ask one of the developers or maintainers for a good place to start.
 
 
-Reticulum on ARM64
+Platform-Specific Install Notes
 ==============================================
-On some architectures, including ARM64, not all dependencies have precompiled
-binaries. On such systems, you may need to install ``python3-dev`` before
-installing Reticulum or programs that depend on Reticulum.
 
-.. code::
+Some platforms require a slightly different installation procedure, or have
+various quirks that are worth being aware of. These are listed here.
 
-   # Install Python and development packages
-   sudo apt update
-   sudo apt install python3 python3-pip python3-dev
-
-   # Install Reticulum
-   python3 -m pip install rns
-
-
-Reticulum on Raspberry Pi
-==============================================
-It is currently recommended to use a 64-bit version of the Raspberry Pi OS
-if you want to run Reticulum on Raspberry Pi computers, since 32-bit versions
-don't always have packages available for some dependencies.
-
-Reticulum on Android
-==============================================
+Android
+^^^^^^^^^^^^^^^^^^^^^^^^
 Reticulum can be used on Android in different ways. The easiest way to get
 started is using an app like `Sideband <https://unsigned.io/sideband>`_.
 
@@ -408,6 +415,74 @@ locally on your device using the following command:
 It is also possible to include Reticulum in apps compiled and distributed as
 Android APKs. A detailed tutorial and example source code will be included
 here at a later point. Until then you can use the `Sideband source code <https://github.com/markqvist/sideband>`_ as an example and startig point.
+
+
+ARM64
+^^^^^^^^^^^^^^^^^^^^^^^^
+On some architectures, including ARM64, not all dependencies have precompiled
+binaries. On such systems, you may need to install ``python3-dev`` before
+installing Reticulum or programs that depend on Reticulum.
+
+.. code::
+
+   # Install Python and development packages
+   sudo apt update
+   sudo apt install python3 python3-pip python3-dev
+
+   # Install Reticulum
+   python3 -m pip install rns
+
+
+Raspberry Pi
+^^^^^^^^^^^^^^^^^^^^^^^^^
+It is currently recommended to use a 64-bit version of the Raspberry Pi OS
+if you want to run Reticulum on Raspberry Pi computers, since 32-bit versions
+don't always have packages available for some dependencies.
+
+While it is possible to install and run Reticulum on 32-bit Rasperry Pi OSes,
+it will require manually configuring and installing some packages, and is not
+detailed in this manual.
+
+
+Debian Bookworm
+^^^^^^^^^^^^^^^^^^^^^^^^
+On versions of Debian released after April 2023, it is no longer possible
+to use ``pip`` to install packages onto your system. Unfortunately, you will need to
+use the replacement ``pipx`` command instead, which places installed packages in an
+isolated environment. This should not negatively affect Reticulum, but installation
+via this method is not fully tested yet.
+
+.. code::
+
+    # Install pipx 
+    sudo apt install pipx
+
+    # Make installed programs available on the command line
+    pipx ensurepath
+
+    # Install Reticulum
+    pipx install rns
+
+
+Ubuntu Lunar
+^^^^^^^^^^^^^^^^^^^^^^^^
+On versions of Ubuntu released after April 2023, it is no longer possible
+to use ``pip`` to install packages onto your system. Unfortunately, you will need to
+use the replacement ``pipx`` command instead, which places installed packages in an
+isolated environment. This should not negatively affect Reticulum, but installation
+via this method is not fully tested yet.
+
+.. code::
+
+    # Install pipx 
+    sudo apt install pipx
+
+    # Make installed programs available on the command line
+    pipx ensurepath
+
+    # Install Reticulum
+    pipx install rns
+
 
 Pure-Python Reticulum
 ==============================================

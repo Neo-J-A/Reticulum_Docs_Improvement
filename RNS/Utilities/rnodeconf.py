@@ -25,6 +25,7 @@
 from time import sleep
 import argparse
 import threading
+import sys
 import os
 import os.path
 import struct
@@ -32,6 +33,7 @@ import datetime
 import time
 import math
 import hashlib
+import zipfile
 from urllib.request import urlretrieve
 from importlib import util
 import RNS
@@ -39,7 +41,7 @@ import RNS
 RNS.logtimefmt      = "%H:%M:%S"
 RNS.compact_log_fmt = True
 
-program_version = "2.1.1"
+program_version = "2.1.2"
 eth_addr = "0x81F7B979fEa6134bA9FD5c701b3501A2e61E897a"
 btc_addr = "3CPmacGm34qYvR6XWLVEJmi2aNe3PZqUuq"
 xmr_addr = "87HcDx6jRSkMQ9nPRd5K9hGGpZLn2s7vWETjMaVM5KfV4TD36NcYa8J8WSxhTSvBzzFpqDwp2fg5GX2moZ7VAP9QMZCZGET"
@@ -77,6 +79,7 @@ class KISS():
     CMD_STAT_SNR    = 0x24
     CMD_BLINK       = 0x30
     CMD_RANDOM      = 0x40
+    CMD_DISP_INT    = 0x45
     CMD_BT_CTRL     = 0x46
     CMD_BT_PIN      = 0x62
     CMD_BOARD       = 0x47
@@ -129,6 +132,10 @@ class ROM():
     MODEL_A2       = 0xA2
     MODEL_A7       = 0xA7
 
+    PRODUCT_T32_10 = 0xB2
+    MODEL_BA       = 0xBA
+    MODEL_BB       = 0xBB
+
     PRODUCT_T32_20 = 0xB0
     MODEL_B3       = 0xB3
     MODEL_B8       = 0xB8
@@ -180,6 +187,7 @@ products = {
     ROM.PRODUCT_RNODE:  "RNode",
     ROM.PRODUCT_HMBRW:  "Hombrew RNode",
     ROM.PRODUCT_TBEAM:  "LilyGO T-Beam",
+    ROM.PRODUCT_T32_10: "LilyGO LoRa32 v1.0",
     ROM.PRODUCT_T32_20: "LilyGO LoRa32 v2.0",
     ROM.PRODUCT_T32_21: "LilyGO LoRa32 v2.1",
     ROM.PRODUCT_H32_V2: "Heltec LoRa32 v2",
@@ -207,6 +215,8 @@ models = {
     0xB8: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_lora32v20.zip"],
     0xB4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_lora32v21.zip"],
     0xB9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_lora32v21.zip"],
+    0xBA: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_lora32v10.zip"],
+    0xBB: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_lora32v10.zip"],
     0xC4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_heltec32v2.zip"],
     0xC9: [850000000, 950000000, 17, "850 - 950 MHz", "rnode_firmware_heltec32v2.zip"],
     0xE4: [420000000, 520000000, 17, "420 - 520 MHz", "rnode_firmware_tbeam.zip"],
@@ -555,6 +565,13 @@ class RNode():
         written = self.serial.write(kiss_command)
         if written != len(kiss_command):
             raise IOError("An IO error occurred while sending host left command to device")
+
+    def set_display_intensity(self, intensity):
+        data = bytes([intensity & 0xFF])
+        kiss_command = bytes([KISS.FEND])+bytes([KISS.CMD_DISP_INT])+data+bytes([KISS.FEND])
+        written = self.serial.write(kiss_command)
+        if written != len(kiss_command):
+            raise IOError("An IO error occurred while sending bluetooth enable command to device")
 
     def enable_bluetooth(self):
         kiss_command = bytes([KISS.FEND, KISS.CMD_BT_CTRL, 0x01, KISS.FEND])
@@ -1090,6 +1107,8 @@ def main():
         parser.add_argument("-B", "--bluetooth-off", action="store_true", help="Turn device bluetooth off")
         parser.add_argument("-p", "--bluetooth-pair", action="store_true", help="Put device into bluetooth pairing mode")
 
+        parser.add_argument("-D", "--display", action="store", metavar="i", type=int, default=None, help="Set display intensity (0-255)")
+
         parser.add_argument("--freq", action="store", metavar="Hz", type=int, default=None, help="Frequency in Hz for TNC mode")
         parser.add_argument("--bw", action="store", metavar="Hz", type=int, default=None, help="Bandwidth in Hz for TNC mode")
         parser.add_argument("--txp", action="store", metavar="dBm", type=int, default=None, help="TX power in dBm for TNC mode")
@@ -1249,7 +1268,16 @@ def main():
             else:
                 RNS.log("Could not detect a connected RNode")
 
-            if rnode.provisioned and rnode.signature_valid:
+            if rnode.provisioned:
+                if not rnode.signature_valid:
+                    print("\nThe device signature in this RNode is unknown and cannot be verified. It is still")
+                    print("possible to extract the firmware from it, but you should make absolutely sure that")
+                    print("it comes from a trusted source. It is possible that someone could have modified the")
+                    print("firmware. If that is the case, these modifications will propagate to any new RNodes")
+                    print("descendent from this one!")
+                    print("\nHit enter if you are sure you want to continue.")
+                    input()
+
                 if rnode.firmware_hash != None:
                     extracted_hash = rnode.firmware_hash
                     extracted_version = rnode.version
@@ -1267,11 +1295,11 @@ def main():
                     hash_f.close()
 
                     extraction_parts = [
-                        ("bootloader", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port /dev/ttyACM1 --baud 921600 --before default_reset --after hard_reset read_flash 0x1000 0x4650 \""+EXT_DIR+"/extracted_rnode_firmware.bootloader\""),
-                        ("partition table", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port /dev/ttyACM1 --baud 921600 --before default_reset --after hard_reset read_flash 0x8000 0xC00 \""+EXT_DIR+"/extracted_rnode_firmware.partitions\""),
-                        ("app boot", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port /dev/ttyACM1 --baud 921600 --before default_reset --after hard_reset read_flash 0xe000 0x2000 \""+EXT_DIR+"/extracted_rnode_firmware.boot_app0\""),
-                        ("application image", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port /dev/ttyACM1 --baud 921600 --before default_reset --after hard_reset read_flash 0x10000 0x200000 \""+EXT_DIR+"/extracted_rnode_firmware.bin\""),
-                        ("console image", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port /dev/ttyACM1 --baud 921600 --before default_reset --after hard_reset read_flash 0x210000 0x1F0000 \""+EXT_DIR+"/extracted_console_image.bin\""),
+                        ("bootloader", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port "+port_path+" --baud 921600 --before default_reset --after hard_reset read_flash 0x1000 0x4650 \""+EXT_DIR+"/extracted_rnode_firmware.bootloader\""),
+                        ("partition table", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port "+port_path+" --baud 921600 --before default_reset --after hard_reset read_flash 0x8000 0xC00 \""+EXT_DIR+"/extracted_rnode_firmware.partitions\""),
+                        ("app boot", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port "+port_path+" --baud 921600 --before default_reset --after hard_reset read_flash 0xe000 0x2000 \""+EXT_DIR+"/extracted_rnode_firmware.boot_app0\""),
+                        ("application image", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port "+port_path+" --baud 921600 --before default_reset --after hard_reset read_flash 0x10000 0x200000 \""+EXT_DIR+"/extracted_rnode_firmware.bin\""),
+                        ("console image", "python \""+CNF_DIR+"/recovery_esptool.py\" --chip esp32 --port "+port_path+" --baud 921600 --before default_reset --after hard_reset read_flash 0x210000 0x1F0000 \""+EXT_DIR+"/extracted_console_image.bin\""),
                     ]
                     import subprocess, shlex
                     for part, command in extraction_parts:
@@ -1400,8 +1428,9 @@ def main():
             print("")
             print("[3] LilyGO LoRa32 v2.1 (aka T3 v1.6 / T3 v1.6.1)")
             print("[4] LilyGO LoRa32 v2.0")
-            print("[5] LilyGO T-Beam")
-            print("[6] Heltec LoRa32 v2")
+            print("[5] LilyGO LoRa32 v1.0")
+            print("[6] LilyGO T-Beam")
+            print("[7] Heltec LoRa32 v2")
             print("       .")
             print("      / \\   Select one of these options if you want to easily turn")
             print("       |    a supported development board into an RNode.")
@@ -1433,7 +1462,7 @@ def main():
                     print("who would like to experiment with it. Hit enter to continue.")
                     print("---------------------------------------------------------------------------")
                     input()
-                elif c_dev == 5:
+                elif c_dev == 6:
                     selected_product = ROM.PRODUCT_TBEAM
                     clear()
                     print("")
@@ -1463,6 +1492,25 @@ def main():
                     print("who would like to experiment with it. Hit enter to continue.")
                     print("---------------------------------------------------------------------------")
                     input()
+                elif c_dev == 5:
+                    selected_product = ROM.PRODUCT_T32_10
+                    clear()
+                    print("")
+                    print("---------------------------------------------------------------------------")
+                    print("                     LilyGO LoRa32 v1.0 RNode Installer")
+                    print("")
+                    print("Important! Using RNode firmware on LoRa32 devices should currently be")
+                    print("considered experimental. It is not intended for production or critical use.")
+                    print("The currently supplied firmware is provided AS-IS as a courtesey to those")
+                    print("who would like to experiment with it.")
+                    print("")
+                    print("Please Note! This device is known to have a faulty battery charging circuit,")
+                    print("which can result in overcharging and damaging batteries. If at all possible,")
+                    print("it is recommended to avoid this device.")
+                    print("")
+                    print("Hit enter if you're sure you wish to continue.")
+                    print("---------------------------------------------------------------------------")
+                    input()
                 elif c_dev == 3:
                     selected_product = ROM.PRODUCT_T32_21
                     clear()
@@ -1476,7 +1524,7 @@ def main():
                     print("who would like to experiment with it. Hit enter to continue.")
                     print("---------------------------------------------------------------------------")
                     input()
-                elif c_dev == 6:
+                elif c_dev == 7:
                     selected_product = ROM.PRODUCT_H32_V2
                     clear()
                     print("")
@@ -1603,6 +1651,28 @@ def main():
                         selected_platform = ROM.PLATFORM_ESP32
                     elif c_model > 1:
                         selected_model = ROM.MODEL_E9
+                        selected_platform = ROM.PLATFORM_ESP32
+                except Exception as e:
+                    print("That band does not exist, exiting now.")
+                    exit()
+
+            elif selected_product == ROM.PRODUCT_T32_10:
+                selected_mcu = ROM.MCU_ESP32
+                print("\nWhat band is this LoRa32 for?\n")
+                print("[1] 433 MHz")
+                print("[2] 868 MHz")
+                print("[3] 915 MHz")
+                print("[4] 923 MHz")
+                print("\n? ", end="")
+                try:
+                    c_model = int(input())
+                    if c_model < 1 or c_model > 4:
+                        raise ValueError()
+                    elif c_model == 1:
+                        selected_model = ROM.MODEL_BA
+                        selected_platform = ROM.PLATFORM_ESP32
+                    elif c_model > 1:
+                        selected_model = ROM.MODEL_BB
                         selected_platform = ROM.PLATFORM_ESP32
                 except Exception as e:
                     print("That band does not exist, exiting now.")
@@ -1929,7 +1999,7 @@ def main():
                     if fw_filename == "rnode_firmware_tbeam.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -1947,7 +2017,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -1962,10 +2032,46 @@ def main():
                                 "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_tbeam.bin",
                                 "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_tbeam.partitions",
                             ]
+                    elif fw_filename == "rnode_firmware_lora32v10.zip":
+                        if numeric_version >= 1.59:
+                            return [
+                                sys.executable, flasher,
+                                "--chip", "esp32",
+                                "--port", args.port,
+                                "--baud", "921600",
+                                "--before", "default_reset",
+                                "--after", "hard_reset",
+                                "write_flash", "-z",
+                                "--flash_mode", "dio",
+                                "--flash_freq", "80m",
+                                "--flash_size", "4MB",
+                                "0xe000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v10.boot_app0",
+                                "0x1000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v10.bootloader",
+                                "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v10.bin",
+                                "0x210000",UPD_DIR+"/"+selected_version+"/console_image.bin",
+                                "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v10.partitions",
+                            ]
+                        else:
+                            return [
+                                sys.executable, flasher,
+                                "--chip", "esp32",
+                                "--port", args.port,
+                                "--baud", "921600",
+                                "--before", "default_reset",
+                                "--after", "hard_reset",
+                                "write_flash", "-z",
+                                "--flash_mode", "dio",
+                                "--flash_freq", "80m",
+                                "--flash_size", "4MB",
+                                "0xe000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v20.boot_app0",
+                                "0x1000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v20.bootloader",
+                                "0x10000", UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v20.bin",
+                                "0x8000",  UPD_DIR+"/"+selected_version+"/rnode_firmware_lora32v20.partitions",
+                            ]
                     elif fw_filename == "rnode_firmware_lora32v20.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -1983,7 +2089,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2001,7 +2107,7 @@ def main():
                     elif fw_filename == "rnode_firmware_lora32v21.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2019,7 +2125,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2037,7 +2143,7 @@ def main():
                     elif fw_filename == "rnode_firmware_heltec32v2.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2055,7 +2161,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2073,7 +2179,7 @@ def main():
                     elif fw_filename == "rnode_firmware_featheresp32.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                               sys.executable,  flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2091,7 +2197,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2109,7 +2215,7 @@ def main():
                     elif fw_filename == "rnode_firmware_esp32_generic.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2127,7 +2233,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2145,7 +2251,7 @@ def main():
                     elif fw_filename == "rnode_firmware_ng20.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2163,7 +2269,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2181,7 +2287,7 @@ def main():
                     elif fw_filename == "rnode_firmware_ng21.zip":
                         if numeric_version >= 1.55:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2199,7 +2305,7 @@ def main():
                             ]
                         else:
                             return [
-                                flasher,
+                                sys.executable, flasher,
                                 "--chip", "esp32",
                                 "--port", args.port,
                                 "--baud", "921600",
@@ -2216,7 +2322,7 @@ def main():
                             ]
                     elif fw_filename == "extracted_rnode_firmware.zip":
                         return [
-                            flasher,
+                            sys.executable, flasher,
                             "--chip", "esp32",
                             "--port", args.port,
                             "--baud", "921600",
@@ -2287,12 +2393,13 @@ def main():
                         try:
                             if fw_filename.endswith(".zip"):
                                 RNS.log("Decompressing firmware...")
-                                unzip_status = call(get_flasher_call("unzip", fw_filename))
-                                if unzip_status == 0:
-                                    RNS.log("Firmware decompressed")
-                                else:
-                                    RNS.log("Could not extract firmware from downloaded zip file")
+                                try:
+                                    with zipfile.ZipFile(fw_src+fw_filename) as zip:
+                                        zip.extractall(fw_src)
+                                except Exception as e:
+                                    RNS.log("Could not decompress firmware from downloaded zip file")
                                     exit()
+                                RNS.log("Firmware decompressed")
 
                             RNS.log("Flashing RNode firmware to device on "+args.port)
                             from subprocess import call
@@ -2414,13 +2521,15 @@ def main():
                         ensure_firmware_file(fw_filename)
 
                     if fw_filename.endswith(".zip") and not fw_filename == "extracted_rnode_firmware.zip":
-                        RNS.log("Extracting firmware...")
-                        unzip_status = call(get_flasher_call("unzip", fw_filename))
-                        if unzip_status == 0:
-                            RNS.log("Firmware extracted")
-                        else:
-                            RNS.log("Could not extract firmware from downloaded zip file")
+                        RNS.log("Decompressing firmware...")
+                        fw_src = UPD_DIR+"/"+selected_version+"/"
+                        try:
+                            with zipfile.ZipFile(fw_src+fw_filename) as zip:
+                                zip.extractall(fw_src)
+                        except Exception as e:
+                            RNS.log("Could not decompress firmware from downloaded zip file")
                             exit()
+                        RNS.log("Firmware decompressed")
 
                 except Exception as e:
                     RNS.log("Could not obtain firmware package for your board")
@@ -2520,6 +2629,15 @@ def main():
                     RNS.log("EEPROM was successfully downloaded from device,")
                     RNS.log("but file could not be written to disk.")
                 exit()
+
+            if isinstance(args.display, int):
+                di = args.display
+                if di < 0:
+                    di = 0
+                if di > 255:
+                    di = 255
+                RNS.log("Setting display intensity to "+str(di))
+                rnode.set_display_intensity(di)
 
             if args.bluetooth_on:
                 RNS.log("Enabling Bluetooth...")
